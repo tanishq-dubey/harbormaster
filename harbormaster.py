@@ -36,45 +36,51 @@ def main(args, spath):
     ])
     logging.info(f'Docker socket forwarding started to {args.user}@{args.host} on local port {args.p}')
 
-    # Get list of running containers
     logging.debug('Waiting for SSH to stabilize')
     connected = False
     while not connected:
         try:
             dClient = docker.DockerClient(base_url=f'tcp://localhost:{args.p}')
+            dClient.ping()
             connected = True
-            logging.info(f'Remote docker engine connection established')
         except:
             logging.info(f'Waiting for tunnel to come up...')
             time.sleep(1)
 
+    logging.info(f'Remote docker engine connection established')
+
+    # Get list of running containers
     cList = dClient.containers.list()
     logging.debug(f'Found {len(cList)} running containers on connect')
+    for c in cList:
+        if c.id not in dRunning:
+            logging.info(f'Found existing container with ID {c.short_id} and name {c.name}')
+            cPortsRaw = c.attrs['NetworkSettings']['Ports']
+            for _,v in cPortsRaw.items():
+                if v:
+                    for p in v:
+                        port = p['HostPort']
+                        proc = createTunnel(port, args.user, args.host)
+                        dRunning[c.id] = proc
 
     # Main Loop
-    while True:
-        cList = dClient.containers.list()
-        tRunning = {}
-        for c in cList:
-            if c.id not in dRunning:
-                logging.info(f'Found new container with ID {c.short_id} and name {c.name}')
-                cPortsRaw = c.attrs['NetworkSettings']['Ports']
-                for k,v in cPortsRaw.items():
-                    if v:
-                        for p in v:
-                            port = p['HostPort']
-                            proc = createTunnel(port, args.user, args.host)
-                            dRunning[c.id] = proc
-                            tRunning[c.id] = proc
-            else:
-                tRunning[c.id] = "still running"
-        dead = {k: dRunning[k] for k in dRunning if k not in tRunning}
-        for k in dead:
-            logging.info(f'Closing tunnel {k}')
-            dRunning[k].terminate()
-            del dRunning[k]
-        time.sleep(1)
-
+    for event in dClient.events(decode=True):
+        if event['Type'] == 'container' and event['status'] == 'start':
+            c = dClient.containers.get(event['id'])
+            logging.info(f'Got container start event for {c.name} ({c.short_id})')
+            cPortsRaw = c.attrs['NetworkSettings']['Ports']
+            for _,v in cPortsRaw.items():
+                if v:
+                    for p in v:
+                        port = p['HostPort']
+                        proc = createTunnel(port, args.user, args.host)
+                        dRunning[c.id] = proc
+        if event['Type'] == 'container' and event['status'] == 'die':
+            c = dClient.containers.get(event['id'])
+            logging.info(f'Got container die event for {c.name} ({c.short_id})')
+            logging.info(f'Closing tunnel {event["id"]}')
+            dRunning[event['id']].terminate()
+            del dRunning[event['id']]
 
 def configfile(spath, port):
     hmsShellPrepend = [
@@ -116,8 +122,14 @@ def cleanfile(spath, port):
 
 def cleanup(spath, port):
     global dockerTunnel
+    global dRunning
 
     cleanfile(spath, port)
+
+    for k, v in dRunning.items():
+        logging.info(f'Closing tunnel {k}')
+        v.terminate()
+
 
     logging.warning(f'Closing remote docker socket connection')
     dockerTunnel.terminate()
@@ -138,12 +150,14 @@ if __name__ == '__main__':
         else:
             logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 
-        s = os.path.abspath(os.path.expanduser('~/.zshrc'))
+        s = os.path.abspath(os.path.expanduser('~/.zshenv'))
 
         configfile(s, a.p)
 
         main(a, s)
     except KeyboardInterrupt:
         logging.warning('Got CTRL-C, cleaning up (CTRL-C again to force)')
+        cleanup(s, a.p)
+    except Exception:
         cleanup(s, a.p)
 
