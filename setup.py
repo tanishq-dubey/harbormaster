@@ -5,7 +5,7 @@ def readme():
         return f.read()
 
 setup(name='harbormaster',
-      version='0.2',
+      version='0.2.1',
       description='automating docker remote host forwarding',
       long_description=readme(),
       long_description_content_type="text/markdown",
