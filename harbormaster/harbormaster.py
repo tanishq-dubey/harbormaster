@@ -1,14 +1,13 @@
-#! /usr/bin/python3
+#! /usr/bin/env python3
 
 import sys
 import os
-
-import docker
-import argparse
 import logging
-
 import subprocess
 import time
+import argparse
+
+import docker
 
 
 dockerTunnel = None
