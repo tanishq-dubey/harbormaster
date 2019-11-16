@@ -12,6 +12,7 @@ import time
 
 
 dockerTunnel = None
+dRunning = {}
 
 def createTunnel(port, user, host):
     logging.info(f'Creating tunnel for port {port} to {user}@{host}')
@@ -25,7 +26,9 @@ def createTunnel(port, user, host):
 
 def main(args, spath):
     global dockerTunnel
+    global dRunning
 
+    # Not using createTunnel() here because this one off tunnel has slightly different syntax
     dockerTunnel = subprocess.Popen([
             'ssh', '-nNT',
             '-L', f'localhost:{args.p}:/var/run/docker.sock',
@@ -35,17 +38,20 @@ def main(args, spath):
 
     # Get list of running containers
     logging.debug('Waiting for SSH to stabilize')
-    time.sleep(5)
-    dClient = docker.DockerClient(base_url=f'tcp://localhost:{args.p}')
-    logging.info(f'Remote docker engine connection established')
+    connected = False
+    while not connected:
+        try:
+            dClient = docker.DockerClient(base_url=f'tcp://localhost:{args.p}')
+            connected = True
+            logging.info(f'Remote docker engine connection established')
+        except:
+            logging.info(f'Waiting for tunnel to come up...')
+            time.sleep(1)
+
     cList = dClient.containers.list()
     logging.debug(f'Found {len(cList)} running containers on connect')
 
-    dRunning = {}
-    """
-    >>> x.attrs['NetworkSettings']['Ports']
-    {'3000/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '3000'}]}
-    """
+    # Main Loop
     while True:
         cList = dClient.containers.list()
         tRunning = {}
