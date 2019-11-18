@@ -63,23 +63,25 @@ def main(args, spath):
                         dRunning[c.id] = proc
 
     # Main Loop
-    for event in dClient.events(decode=True):
-        if event['Type'] == 'container' and event['status'] == 'start':
-            c = dClient.containers.get(event['id'])
-            logging.info(f'Got container start event for {c.name} ({c.short_id})')
-            cPortsRaw = c.attrs['NetworkSettings']['Ports']
-            for _,v in cPortsRaw.items():
-                if v:
-                    for p in v:
-                        port = p['HostPort']
-                        proc = createTunnel(port, args.user, args.host)
-                        dRunning[c.id] = proc
-        if event['Type'] == 'container' and event['status'] == 'die':
-            c = dClient.containers.get(event['id'])
-            logging.info(f'Got container die event for {c.name} ({c.short_id})')
-            logging.info(f'Closing tunnel {event["id"]}')
-            dRunning[event['id']].terminate()
-            del dRunning[event['id']]
+    while True:
+        for event in dClient.events(decode=True):
+            if event['Type'] == 'container' and event['status'] == 'start':
+                c = dClient.containers.get(event['id'])
+                logging.info(f'Got container start event for {c.name} ({c.short_id})')
+                cPortsRaw = c.attrs['NetworkSettings']['Ports']
+                for _,v in cPortsRaw.items():
+                    if v:
+                        for p in v:
+                            port = p['HostPort']
+                            proc = createTunnel(port, args.user, args.host)
+                            dRunning[c.id] = proc
+            if event['Type'] == 'container' and event['status'] == 'die':
+                c = dClient.containers.get(event['id'])
+                logging.info(f'Got container die event for {c.name} ({c.short_id})')
+                logging.info(f'Closing tunnel {event["id"]}')
+                if c.id in dRunning:
+                    dRunning[c.id].terminate()
+                    del dRunning[c.id]
 
 def configfile(spath, port):
     hmsShellPrepend = [
@@ -156,7 +158,6 @@ if __name__ == '__main__':
         main(a, s)
     except KeyboardInterrupt:
         logging.warning('Got CTRL-C, cleaning up (CTRL-C again to force)')
-        cleanup(s, a.p)
-    except Exception:
+    finally:
         cleanup(s, a.p)
 
