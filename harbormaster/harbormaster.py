@@ -60,7 +60,10 @@ def main(args, spath):
                     for p in v:
                         port = p['HostPort']
                         proc = createTunnel(port, args.user, args.host)
-                        dRunning[c.id] = proc
+                        if c.id in dRunning:
+                            dRunning[c.id].append(proc)
+                        else:
+                            dRunning[c.id] = [proc]
 
     # Main Loop
     for event in dClient.events(decode=True):
@@ -73,13 +76,20 @@ def main(args, spath):
                     for p in v:
                         port = p['HostPort']
                         proc = createTunnel(port, args.user, args.host)
-                        dRunning[c.id] = proc
+                        if c.id in dRunning:
+                            dRunning[c.id].append(proc)
+                        else:
+                            dRunning[c.id] = [proc]
         if event['Type'] == 'container' and event['status'] == 'die':
             c = dClient.containers.get(event['id'])
             logging.info(f'Got container die event for {c.name} ({c.short_id})')
-            logging.info(f'Closing tunnel {event["id"]}')
-            dRunning[event['id']].terminate()
-            del dRunning[event['id']]
+            if c.id in dRunning:
+                logging.info(f'Closing tunnel(s) {event["id"]}')
+                for p in dRunning[event['id']]:
+                    p.terminate()
+                del dRunning[event['id']]
+            else:
+                logging.info(f'Harbormaster is no longer managing {c.name} ({event["id"]})')
 
 def configfile(spath, port):
     hmsShellPrepend = [
@@ -88,8 +98,12 @@ def configfile(spath, port):
         '#<<<$< END HARBOR MASTER >$>>>\n'
     ]
     logging.debug(f'Opening shell config at {spath}')
-    with open(spath, 'r') as f:
-        dat = f.readlines()
+    try:
+        with open(spath, 'r') as f:
+            dat = f.readlines()
+    except Exception as e:
+        logging.error(f'There was an error opeing your .zshenv file: {e}')
+        sys.exit(-1)
 
     dat.extend(hmsShellPrepend)
 
@@ -126,8 +140,9 @@ def cleanup(spath, port):
     cleanfile(spath, port)
 
     for k, v in dRunning.items():
-        logging.info(f'Closing tunnel {k}')
-        v.terminate()
+        logging.info(f'Closing tunnel(s) for {k}')
+        for p in v:
+            p.terminate()
 
 
     logging.warning(f'Closing remote docker socket connection')
@@ -155,8 +170,9 @@ if __name__ == '__main__':
 
         main(a, s)
     except KeyboardInterrupt:
-        logging.warning('Got CTRL-C, cleaning up (CTRL-C again to force)')
-        cleanup(s, a.p)
-    except Exception:
+        logging.info('Got CTRL-C, cleaning up (CTRL-C again to force)')
+    except Exception as e:
+        logging.error(f'There was an error: {e}')
+    finally:
         cleanup(s, a.p)
 

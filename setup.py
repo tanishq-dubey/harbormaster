@@ -14,8 +14,11 @@ setup(name='harbormaster',
       author_email='tanishq@dubey.dev',
       license='MIT',
       packages=['harbormaster'],
+      install_requires=[
+          'docker',
+      ],
       zip_safe=False,
-      scripts=['harbormaster/harbormaster.py'],
+      scripts=['bin/harbormaster'],
       classifiers=[
           'Development Status :: 4 - Beta',
           'Intended Audience :: Developers',
