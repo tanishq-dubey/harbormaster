@@ -26,7 +26,7 @@ Alternatively, you may clone this repository, install the docker python package 
 ## Usage
 
 ```
-usage: harbormaster.py [-h] [-p P] [-v] user host
+usage: harbormaster.py [-h] [-p P] [-l P] [-v] user host
 
 Automatically port forward the docker socket and container
 
@@ -37,6 +37,7 @@ positional arguments:
 optional arguments:
   -h, --help  show this help message and exit
   -p P        Local port for forwarded socket, default 2377
+  -l P        Legacy TCP port to use instead of socket for Docker API
   -v          Verbose output
 ```
 

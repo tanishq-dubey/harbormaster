@@ -10,6 +10,7 @@ import argparse
 import docker
 
 
+dockerSocketPath = '/var/run/docker.sock'
 dockerTunnel = None
 dRunning = {}
 
@@ -27,12 +28,21 @@ def main(args, spath):
     global dockerTunnel
     global dRunning
 
-    # Not using createTunnel() here because this one off tunnel has slightly different syntax
-    dockerTunnel = subprocess.Popen([
-            'ssh', '-nNT',
-            '-L', f'localhost:{args.p}:/var/run/docker.sock',
-            f'{args.user}@{args.host}'
-    ])
+    if args.l > 0:
+        # Not using createTunnel() here because this one off tunnel has slightly different syntax
+        dockerTunnel = subprocess.Popen([
+                'ssh', '-nNT',
+                '-L', f'localhost:{args.p}:localhost:{args.l}',
+                f'{args.user}@{args.host}'
+        ])
+    else:
+        # Not using createTunnel() here because this one off tunnel has slightly different syntax
+        dockerTunnel = subprocess.Popen([
+                'ssh', '-nNT',
+                '-L', f'localhost:{args.p}:{dockerSocketPath}',
+                f'{args.user}@{args.host}'
+        ])
+
     logging.info(f'Docker socket forwarding started to {args.user}@{args.host} on local port {args.p}')
 
     logging.debug('Waiting for SSH to stabilize')
@@ -156,6 +166,7 @@ if __name__ == '__main__':
         parser.add_argument('host', type=str, help='Host to SSH to')
         parser.add_argument('-p', type=int, help='Local port for forwarded socket, default 2377', default=2377)
         parser.add_argument('-v', action='store_true', help='Verbose output', default=False)
+        parser.add_argument('-l', type=int, help='Legacy TCP port to use instead of socket for Docker API', default=0)
 
         a = parser.parse_args()
         if a.v:
@@ -163,6 +174,10 @@ if __name__ == '__main__':
             logging.debug('Debug logging enabled')
         else:
             logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+        if a.l > 0:
+            logging.info(f'Connecting to remote port {a.l} for Docker API')
+        else:
+            logging.info(f'Connecting to remote socket {dockerSocketPath}')
 
         s = os.path.abspath(os.path.expanduser('~/.zshenv'))
 
