@@ -18,7 +18,7 @@ def createTunnel(port, user, host):
     logging.info(f'Creating tunnel for port {port} to {user}@{host}')
     p = subprocess.Popen([
             'ssh', '-nNT',
-            '-L', f'{port}:localhost:{port}',
+            '-L', f'0.0.0.0:{port}:localhost:{port}',
             f'{user}@{host}'
     ])
     return p
@@ -77,29 +77,36 @@ def main(args, spath):
 
     # Main Loop
     for event in dClient.events(decode=True):
-        if event['Type'] == 'container' and event['status'] == 'start':
-            c = dClient.containers.get(event['id'])
-            logging.info(f'Got container start event for {c.name} ({c.short_id})')
-            cPortsRaw = c.attrs['NetworkSettings']['Ports']
-            for _,v in cPortsRaw.items():
-                if v:
-                    for p in v:
-                        port = p['HostPort']
-                        proc = createTunnel(port, args.user, args.host)
-                        if c.id in dRunning:
-                            dRunning[c.id].append(proc)
-                        else:
-                            dRunning[c.id] = [proc]
-        if event['Type'] == 'container' and event['status'] == 'die':
-            c = dClient.containers.get(event['id'])
-            logging.info(f'Got container die event for {c.name} ({c.short_id})')
-            if c.id in dRunning:
-                logging.info(f'Closing tunnel(s) {event["id"]}')
-                for p in dRunning[event['id']]:
-                    p.terminate()
-                del dRunning[event['id']]
-            else:
-                logging.info(f'Harbormaster is no longer managing {c.name} ({event["id"]})')
+        try:
+            if event['Type'] == 'container' and event['status'] == 'start':
+                c = dClient.containers.get(event['id'])
+                logging.info(f'Got container start event for {c.name} ({c.short_id})')
+                cPortsRaw = c.attrs['NetworkSettings']['Ports']
+                if cPortsRaw is None:
+                    logging.info(f'Container {c.name} was removed too quickly!')
+                    continue
+                for _,v in cPortsRaw.items():
+                    if v:
+                        for p in v:
+                            port = p['HostPort']
+                            proc = createTunnel(port, args.user, args.host)
+                            if c.id in dRunning:
+                                dRunning[c.id].append(proc)
+                            else:
+                                dRunning[c.id] = [proc]
+            if event['Type'] == 'container' and event['status'] == 'die':
+                c = dClient.containers.get(event['id'])
+                logging.info(f'Got container die event for {c.name} ({c.short_id})')
+                if c.id in dRunning:
+                    logging.info(f'Closing tunnel(s) {event["id"]}')
+                    for p in dRunning[event['id']]:
+                        p.terminate()
+                    del dRunning[event['id']]
+                else:
+                    logging.info(f'Harbormaster is no longer managing {c.name} ({event["id"]})')
+        except docker.errors.NotFound as e:
+            logging.info(e)
+            continue
 
 def configfile(spath, port):
     hmsShellPrepend = [
